@@ -256,5 +256,6 @@ names:
 - '255'
 - '256'
 nc: 256
-train: /content/drive/MyDrive/yoloV5/data/images/train
-val: /content/drive/MyDrive/yoloV5/data/images/validation
+train: ../medium_dataset/images/train
+val: ../medium_dataset/images/validation
+

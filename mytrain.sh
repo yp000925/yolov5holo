@@ -11,3 +11,4 @@ python train.py \
 --adam \
 --name 'exp00' \
 --save_period 50 \
+--project '/content/drive/MyDrive/yoloV5/train'
