@@ -10,11 +10,11 @@ import yaml
 from tqdm import tqdm
 
 from models.experimental import attempt_load
-from utils.datasets import create_dataloader
+from utils.datasets import create_dataloader,create_dataloader2
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
-from utils.plots import plot_images, output_to_target, plot_study_txt
+from utils.plots import plot_images, output_to_target, plot_study_txt,plot_images_modified
 from utils.torch_utils import select_device, time_synchronized
 
 import torchvision
@@ -35,15 +35,13 @@ def post_nms(pred, iou_thre):
         boxes, scores = x[:, :4], x[:, 4]
         i = torchvision.ops.nms(boxes, scores, iou_thre)
         output[xi] = x[i]
-
     return output
 
-
 @torch.no_grad()
-def test(data,
+def evaluation(data,
          weights=None,
-         batch_size=32,
-         imgsz=640,
+         batch_size=16,
+         imgsz=512,
          conf_thres=0.001,
          iou_thres=0.6,  # for NMS
          save_json=False,
@@ -92,7 +90,7 @@ def test(data,
     # Configure
     model.eval()
     if isinstance(data, str):
-        is_coco = data.endswith('coco.yaml')
+        # is_coco = data.endswith('coco.yaml')
         with open(data) as f:
             data = yaml.safe_load(f)
     check_dataset(data)  # check
@@ -109,18 +107,19 @@ def test(data,
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
-                                       prefix=colorstr(f'{task}: '))[0]
+        dataloader = create_dataloader2(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
+                                       prefix=colorstr(f'{task}: '),image_weights=True)[0]
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-    coco91class = coco80_to_coco91_class()
+    # coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
-    for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+    # for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+    for batch_i, (img, targets, paths, shapes) in enumerate(dataloader):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -193,7 +192,7 @@ def test(data,
                 box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
                 for p, b in zip(pred.tolist(), box.tolist()):
                     jdict.append({'image_id': image_id,
-                                  'category_id': coco91class[int(p[5])] if is_coco else int(p[5]),
+                                  'category_id': int(p[5]),
                                   'bbox': [round(x, 3) for x in b],
                                   'score': round(p[4], 5)})
 
@@ -236,9 +235,9 @@ def test(data,
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
+            Thread(target=plot_images_modified, args=(img, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
+            Thread(target=plot_images_modified, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -339,7 +338,7 @@ if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
     if opt.task in ('train', 'val', 'test'):  # run normally
-        test(opt.data,
+        evaluation(opt.data,
              opt.weights,
              opt.batch_size,
              opt.img_size,
@@ -357,7 +356,7 @@ if __name__ == '__main__':
 
     elif opt.task == 'speed':  # speed benchmarks
         for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, opt=opt)
+            evaluation(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, opt=opt)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         # python test.py --task study --data coco.yaml --iou 0.7 --weights yolov5s.pt yolov5m.pt yolov5l.pt yolov5x.pt
@@ -367,7 +366,7 @@ if __name__ == '__main__':
             y = []  # y axis
             for i in x:  # img-size
                 print(f'\nRunning {f} point {i}...')
-                r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
+                r, _, t = evaluation(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
                                plots=False, opt=opt)
                 y.append(r + t)  # results and times
             np.savetxt(f, y, fmt='%10.4g')  # save

@@ -418,6 +418,7 @@ def train(hyp, opt, device, tb_writer=None):
                                               if (save_dir / f).exists()]})
         # Test best.pt
         logger.info('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
+
         if opt.data.endswith('coco.yaml') and nc == 80:  # if COCO
             for m in [last, best] if best.exists() else [last]:  # speed, mAP tests
                 results, _, _ = test.test(opt.data,
@@ -491,7 +492,7 @@ if __name__ == '__main__':
 
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
-    opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
+    opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1  ## 定义多卡训练的
     set_logging(opt.global_rank)
     if opt.global_rank in [-1, 0]:
         check_git_status()
