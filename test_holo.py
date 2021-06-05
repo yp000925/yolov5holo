@@ -3,14 +3,14 @@ import json
 import os
 from pathlib import Path
 from threading import Thread
-
+from utils.loss import ComputeLoss
 import numpy as np
 import torch
 import yaml
 from tqdm import tqdm
 
 from models.experimental import attempt_load
-from utils.datasets import create_dataloader,create_dataloader2
+from utils.datasets import create_dataloader,create_dataloader_modified
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
@@ -40,7 +40,7 @@ def post_nms(pred, iou_thre):
 @torch.no_grad()
 def evaluation(data,
          weights=None,
-         batch_size=16,
+         batch_size=2,
          imgsz=512,
          conf_thres=0.001,
          iou_thres=0.6,  # for NMS
@@ -98,6 +98,10 @@ def evaluation(data,
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
+
+    ## compute loss
+    # compute_loss = ComputeLoss(model)  # init loss class
+
     # Logging
     log_imgs = 0
     if wandb_logger and wandb_logger.wandb:
@@ -107,7 +111,7 @@ def evaluation(data,
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader2(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
+        dataloader = create_dataloader_modified(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
                                        prefix=colorstr(f'{task}: '),image_weights=True)[0]
 
     seen = 0
@@ -132,6 +136,7 @@ def evaluation(data,
         t0 += time_synchronized() - t
 
         # Compute loss
+
         if compute_loss:
             loss += compute_loss([x.float() for x in train_out], targets)[1][:3]  # box, obj, cls
 
@@ -335,6 +340,7 @@ if __name__ == '__main__':
     check_requirements(exclude=('tensorboard', 'pycocotools', 'thop'))
     import os
 
+    opt.batch_size = 2
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
     if opt.task in ('train', 'val', 'test'):  # run normally
