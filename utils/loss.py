@@ -84,18 +84,18 @@ class QFocalLoss(nn.Module):
         else:  # 'none'
             return loss
 
-class ComputeLoss2:
+class ComputeLoss_Depthmap:
     # Compute losses
     def __init__(self, model, autobalance=False):
-        super(ComputeLoss2, self).__init__()
+        super(ComputeLoss_Depthmap, self).__init__()
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
         # Define criteria
-        BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
+        # BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
 
-        # BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
-        MSEobj = nn.MSELoss()
+        BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
+        MSEdepth = nn.MSELoss()
 
         # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
         self.cp, self.cn = smooth_BCE(eps=h.get('label_smoothing', 0.0))  # positive, negative BCE targets
@@ -108,7 +108,7 @@ class ComputeLoss2:
         det = model.module.model[-1] if is_parallel(model) else model.model[-1]  # Detect() module
         self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, .02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
-        self.BCEcls, self.MSEobj, self.gr, self.hyp, self.autobalance = BCEcls, MSEobj, model.gr, h, autobalance
+        self.BCEobj, self.MSEdepth, self.gr, self.hyp, self.autobalance = BCEobj, MSEdepth, model.gr, h, autobalance
         for k in 'na', 'nc', 'nl', 'anchors':
             setattr(self, k, getattr(det, k))
 
@@ -137,15 +137,15 @@ class ComputeLoss2:
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
 
                 # Classification
-                if self.nc > 1:  # cls loss (only if multiple classes)
-                    t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
-                    t[range(n), tcls[i]] = self.cp
-                    lcls += self.BCEcls(ps[:, 5:], t)  # BCE
+                # if self.nc > 1:  # cls loss (only if multiple classes)
+                #     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
+                #     t[range(n), tcls[i]] = self.cp
+                #     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
                 # regression loss when we set the class is 1, just the depth loss
-                if self.nc == 1:
-                    t = tcls[i]/255.0 # change to 0-1 range
-                    lcls += self.MSEobj(ps[:,5:], t)
+                assert self.nc == 1
+                t = tcls[i]/255.0 # change to 0-1 range
+                lcls += self.MSEdepth(ps[:,5:].squeeze(), t)
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
