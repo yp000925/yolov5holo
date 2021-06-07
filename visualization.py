@@ -26,7 +26,7 @@ def post_nms(pred, iou_thre):
     xc = pred[..., 4] > 0.8  # objectiveness
 
     for xi, x in enumerate(pred):
-        x = x[xc[xi]]  # #cls_conf>thred, nc+5 [bbox,cls,nc] nc代表的每个class的confidence
+        x = x[xc[xi]]  # #cls_conf>thred, nc+5 [bbox,objectiveness,nc] nc代表的每个class的confidence
         x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
@@ -43,7 +43,8 @@ if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
     source = '/Users/zhangyunping/PycharmProjects/Holo_synthetic/datayoloV5format/images/small_test'
-    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
+    # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
+    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
     view_image = True
     img_size = 512
     # project = '/content/drive/MyDrive/yoloV5/train/exp3'
