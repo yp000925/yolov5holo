@@ -37,6 +37,22 @@ import torchvision
 #         output[xi] = x[i]
 #
 #     return output
+
+def pred_label_onehot(pred_output, nc =256):
+    z = []
+    assert pred_output.shape[2] == 6
+    bz = pred_output.shape[0]
+    na = pred_output.shape[1]
+    for i in range(bz):
+        cls = pred_output[i,:,-1]*nc
+        cls = cls.long()
+        cls_one_hot=torch.zeros(na,nc).to(pred_output.device)
+        cls_one_hot[range(na),cls] = 1
+        y = torch.cat((pred_output[i,:,0:5],cls_one_hot),-1)
+        z.append(y.unsqueeze(0))
+    return torch.cat(z,0)
+
+
 @torch.no_grad()
 def test_depthmap(data,
          weights=None,
@@ -94,8 +110,8 @@ def test_depthmap(data,
         with open(data) as f:
             data = yaml.safe_load(f)
     check_dataset(data)  # check
-    nc = int(data['nc'])  # number of classes
-    assert nc == 256
+    data_nc = int(data['nc'])  # number of classes
+    assert data_nc == 256
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -103,6 +119,7 @@ def test_depthmap(data,
     log_imgs = 0
     if wandb_logger and wandb_logger.wandb:
         log_imgs = min(wandb_logger.log_imgs, 100)
+
     # Dataloader
     if not training:
         if device.type != 'cpu':
@@ -112,7 +129,7 @@ def test_depthmap(data,
                                        prefix=colorstr(f'{task}: '))[0]
 
     seen = 0
-    confusion_matrix = ConfusionMatrix(nc=nc)
+    confusion_matrix = ConfusionMatrix(nc=data_nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
@@ -128,7 +145,11 @@ def test_depthmap(data,
 
         # Run model
         t = time_synchronized()
+
         out, train_out = model(img, augment=augment)  # inference and training outputs
+
+        out = pred_label_onehot(out) #one-hot-version
+
         t0 += time_synchronized() - t
 
         # Compute loss
@@ -139,7 +160,7 @@ def test_depthmap(data,
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t = time_synchronized()
-        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
+        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True)
         # out = post_nms(out,0.45)
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         t1 += time_synchronized() - t
@@ -158,8 +179,8 @@ def test_depthmap(data,
                 continue
 
             # Predictions
-            if single_cls:
-                pred[:, 5] = 0
+            # if single_cls:
+            #     pred[:, 5] = 0
             predn = pred.clone()
             scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
 
@@ -245,7 +266,7 @@ def test_depthmap(data,
         p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
+        nt = np.bincount(stats[3].astype(np.int64), minlength=data_nc)  # number of targets per class
     else:
         nt = torch.zeros(1)
 
@@ -254,7 +275,7 @@ def test_depthmap(data,
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     # Print results per class
-    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+    if (verbose or (data_nc < 50 and not training)) and data_nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
             print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
@@ -302,7 +323,7 @@ def test_depthmap(data,
     if not training:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {save_dir}{s}")
-    maps = np.zeros(nc) + map
+    maps = np.zeros(data_nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
