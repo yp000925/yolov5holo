@@ -46,6 +46,8 @@ def pred_label_onehot(pred_output, nc =256):
     for i in range(bz):
         cls = pred_output[i,:,-1]*nc
         cls = cls.long()
+        cls[cls >= nc] = nc-1 # 限制在0-255 之间
+        cls[cls < 0] = 0
         cls_one_hot=torch.zeros(na,nc).to(pred_output.device)
         cls_one_hot[range(na),cls] = 1
         y = torch.cat((pred_output[i,:,0:5],cls_one_hot),-1)
