@@ -132,6 +132,8 @@ class ConfusionMatrix:
         x = torch.where(iou > self.iou_thres)
         if x[0].shape[0]:
             matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+            # 将符合条件的组合提出并附上iou
+            # 但有可能一对多
             if x[0].shape[0] > 1:
                 matches = matches[matches[:, 2].argsort()[::-1]]
                 matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
@@ -147,7 +149,7 @@ class ConfusionMatrix:
             if n and sum(j) == 1:
                 self.matrix[detection_classes[m1[j]], gc] += 1  # correct
             else:
-                self.matrix[self.nc, gc] += 1  # background FP
+                self.matrix[self.nc, gc] += 1  # background FP， gc没有对应的bbox
 
         if n:
             for i, dc in enumerate(detection_classes):
@@ -222,7 +224,3 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     fig.savefig(Path(save_dir), dpi=250)
 
-# class Accuracy_Depthmap:
-#     def __init__(self):
-#         super(Accuracy_Depthmap, self).__init__()
-#         self.
