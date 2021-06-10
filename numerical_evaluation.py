@@ -99,6 +99,8 @@ if __name__ == '__main__':
             labels[:,1::] = xywh2xyxy(labels[:,1::])# class, x,y,x,y
             mat.process_batch(detections,labels)
 
+# Calculate accuracy      ----------------------------------------------------------------------------------------------
+
         mtx = mat.matrix
         thred = 10 # take prediction within this range as acceptable
         correct_match = 0
