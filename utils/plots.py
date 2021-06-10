@@ -234,7 +234,7 @@ def plot_images_modified(images, targets, paths=None, fname='images.jpg', names=
         block_x = int(w * (i // ns))
         block_y = int(h * (i % ns))
 
-        img = img.transpose(1, 2, 0)
+        img = img.transpose(1, 2, 0) #channel last
         if scale_factor < 1:
             img = cv2.resize(img, (w, h))
 

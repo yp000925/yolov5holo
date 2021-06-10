@@ -345,7 +345,7 @@ def xywh2xyxy(x):
     return y
 
 
-def xywhn2xyxy(x, w=640, h=640, padw=0, padh=0):
+def xywhn2xyxy(x, w=512, h=512, padw=0, padh=0):
     # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
     y[:, 0] = w * (x[:, 0] - x[:, 2] / 2) + padw  # top left x
@@ -489,6 +489,85 @@ def wh_iou(wh1, wh2):
     wh2 = wh2[None]  # [1,M,2]
     inter = torch.min(wh1, wh2).prod(2)  # [N,M]
     return inter / (wh1.prod(2) + wh2.prod(2) - inter)  # iou = inter / (area1 + area2 - inter)
+
+def nms_modified(prediction, obj_thre = 0.5, iou_thres = 0.6, nc=256, max_det=300,classes = None):
+    """
+    Run non-maximum suppression (NMS) modified version on depthmap output
+    Args:
+        prediction:
+        obj_thre:
+        iou_thres:
+        nc:
+        max_det:
+
+    Returns:
+
+    """
+    xc = prediction[...,4] > obj_thre #candidates
+
+    # Checks
+    assert 0 <= obj_thre <= 1, f'Invalid Confidence threshold {obj_thre}, valid values are between 0.0 and 1.0'
+    assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
+    max_nms = 30000
+    time_limit = 10.0
+
+
+    t = time.time()
+    output = [torch.zeros((0, 6), device=prediction.device)] * prediction.shape[0]
+    for xi, x in enumerate(prediction):  # image index, image inference
+
+        x = x[xc[xi]]  # confidence
+
+        # If none remain process next image
+        if not x.shape[0]:
+            continue
+
+        # Transfer into depth class
+        cls = x[:, 5] * nc  # class
+        cls =cls.int().unsqueeze(-1)
+
+
+        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
+        box = xywh2xyxy(x[:, :4])
+
+        # Detections matrix nx6 (xyxy, conf, cls)
+        conf =x[:, 4].unsqueeze(-1)
+        x = torch.cat((box, conf, cls.float()), 1)
+
+        # Filter by class
+        if classes is not None:
+            x = x[(x[:, -1] == torch.tensor(classes, device=x.device)).any(1)]
+
+        # Apply finite constraint
+        # if not torch.isfinite(x).all():
+        #     x = x[torch.isfinite(x).all(1)]
+
+        # Check shape
+        n = x.shape[0]  # number of boxes
+        if not n:  # no boxes
+            continue
+        elif n > max_nms:  # excess boxes
+            x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence
+
+        # Batched NMSs
+        boxes, scores = x[:, 0:4], x[:, 4]  # boxes (offset by class), scores
+        nomralized_depth = x[:,5]
+        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        if i.shape[0] > max_det:  # limit detections
+            i = i[:max_det]
+
+        # if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
+        #     # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
+        #     iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
+        #     weights = iou * nomralized_depth[None]  # box weights
+        #     x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
+
+        output[xi] = x[i]
+        if (time.time() - t) > time_limit:
+            print(f'WARNING: NMS time limit {time_limit}s exceeded')
+            break  # time limit exceeded
+
+    return output
 
 
 def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,

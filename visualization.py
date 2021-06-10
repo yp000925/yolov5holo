@@ -8,11 +8,12 @@ import numpy as np
 import torch
 import yaml
 from tqdm import tqdm
+from test import pred_label_onehot
 
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader,create_dataloader_modified
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
+    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr, nms_modified
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt,plot_images_modified
 from utils.torch_utils import select_device, time_synchronized
@@ -77,12 +78,22 @@ if __name__ == '__main__':
         img = img.to(device, non_blocking=True)
         img = img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
-        out, train_out = model(img)  # inference and training outputs
+        targets = targets.to(device)
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
-        # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
-        out = post_nms(out,0.45)
+
+        out, train_out = model(img)  # inference and training outputs
+        # if would like to use one_hot for output
+        # out = pred_label_onehot(out)
+        # out = non_max_suppression(out)
+        # out = post_nms(out,0.45)
+
+
+        # if would like to use depthmap as the class directly
+        out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
+        # 因为用了torch自带的nms所以变成了xyxy
+
+
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         plot_images_modified(img, targets, paths, fname='check.jpg', names=None)
-        plot_images_modified(img,output_to_target(out),paths ,fname = 'check_pred.jpg',names=None)
+        plot_images_modified(img, output_to_target(out),paths ,fname = 'check_pred3.jpg',names=None)
