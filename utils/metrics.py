@@ -221,3 +221,8 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     ax.set_ylim(0, 1)
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     fig.savefig(Path(save_dir), dpi=250)
+
+# class Accuracy_Depthmap:
+#     def __init__(self):
+#         super(Accuracy_Depthmap, self).__init__()
+#         self.

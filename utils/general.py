@@ -777,3 +777,23 @@ def increment_path(path, exist_ok=False, sep='', mkdir=False):
     if not dir.exists() and mkdir:
         dir.mkdir(parents=True, exist_ok=True)  # make directory
     return path
+
+
+
+def post_nms(pred, iou_thre):
+    output = [torch.zeros((0, 6), device=pred.device)] * pred.shape[0]
+    nc = pred.shape[2] - 5
+    xc = pred[..., 4] > 0.8  # objectiveness
+
+    for xi, x in enumerate(pred):
+        x = x[xc[xi]]  # #cls_conf>thred, nc+5 [bbox,objectiveness,nc] nc代表的每个class的confidence
+        x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
+        box = xywh2xyxy(x[:, :4])
+        conf, j = x[:, 5:].max(1, keepdim=True)
+        x = torch.cat((box, conf, j.float()), 1)
+        # x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+        boxes, scores = x[:, :4], x[:, 4]
+        i = torchvision.ops.nms(boxes, scores, iou_thre)
+        output[xi] = x[i]
+    return output

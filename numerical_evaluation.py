@@ -13,7 +13,7 @@ from test import pred_label_onehot
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader,create_dataloader_modified
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr, nms_modified
+    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr,post_nms, nms_modified
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt,plot_images_modified
 from utils.torch_utils import select_device, time_synchronized
@@ -21,25 +21,9 @@ from utils.torch_utils import select_device, time_synchronized
 import torchvision
 
 
-def post_nms(pred, iou_thre):
-    output = [torch.zeros((0, 6), device=pred.device)] * pred.shape[0]
-    nc = pred.shape[2] - 5
-    xc = pred[..., 4] > 0.8  # objectiveness
-
-    for xi, x in enumerate(pred):
-        x = x[xc[xi]]  # #cls_conf>thred, nc+5 [bbox,objectiveness,nc] nc代表的每个class的confidence
-        x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
-        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
-        box = xywh2xyxy(x[:, :4])
-        conf, j = x[:, 5:].max(1, keepdim=True)
-        x = torch.cat((box, conf, j.float()), 1)
-        # x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
-        boxes, scores = x[:, :4], x[:, 4]
-        i = torchvision.ops.nms(boxes, scores, iou_thre)
-        output[xi] = x[i]
-    return output
 
 if __name__ == '__main__':
+
     import os
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
@@ -74,7 +58,13 @@ if __name__ == '__main__':
                                    prefix=colorstr(f'{task}: '),image_weights=True)[0]
 
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+
+
+    mat = ConfusionMatrix(nc=256, conf=0.5, iou_thres=0.6)
+
+
     for batch_i, (img, targets, paths, shapes) in enumerate(dataloader):
+        # targets in the format [batch_idx, class_id, x,y,w,h]
         img = img.to(device, non_blocking=True)
         img = img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -83,29 +73,29 @@ if __name__ == '__main__':
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
 
         out, train_out = model(img)  # inference and training outputs
-        # if would like to use one_hot for output
+
+        # # if would like to use one_hot for output
         # out = pred_label_onehot(out)
         # out = non_max_suppression(out)
-        # out = post_nms(out,0.45)
+        # out = post_nms(out,0.45)# list of anchors with [xyxy, conf, cls]
 
 
-        # if would like to use depthmap as the class directly
+        # # if would like to use depthmap as the class directly
         out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
         # 因为用了torch自带的nms所以变成了xyxy
 
 
+# plot ----------------------------------------------------------------------------------------------------------------
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         plot_images_modified(img, targets, paths, fname='check.jpg', names=None)
-        plot_images_modified(img, output_to_target(out),paths ,fname = 'check_pred3.jpg',names=None)
+        plot_images_modified(img, output_to_target(out),paths ,fname = 'check_pred.jpg',names=None)
 
-from utils.metrics import ConfusionMatrix
-out3 = nms_modified(out, obj_thre=0.8,iou_thres=0.5,nc=256)
-mat = ConfusionMatrix(nc=256,conf=0.5, iou_thres=0.6)
-# out_targetfmt = output_to_target(out3)
-for idx in range(len(out3)):
-    labels = targets[targets[:,0].int()==idx][:,1::] # class, x,y,w,h
-    detections = out3[idx] # x,y,x,y,conf,cls
-    detections[:,5] = detections[:,5].int()
-    labels[:,1::] = xywh2xyxy(labels[:,1::])# class, x,y,x,y
-    mat.process_batch(detections,labels)
-    break
+
+# update confusion matrix ----------------------------------------------------------------------------------------------
+        for batch_idx in range(len(out)):
+            labels = targets[targets[:,0].int()==batch_idx][:,1::] # class, x,y,w,h
+            detections = out[batch_idx] # x,y,x,y,conf,cls
+            detections[:,5] = detections[:,5].int()
+            labels[:,1::] = xywh2xyxy(labels[:,1::])# class, x,y,x,y
+            mat.process_batch(detections,labels)
+
