@@ -45,7 +45,8 @@ if __name__ == '__main__':
 
     source = '/Users/zhangyunping/PycharmProjects/Holo_synthetic/datayoloV5format/images/small_test'
     # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
-    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
+    # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
+    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_linearout/best.pt'
     view_image = True
     img_size = 512
     # project = '/content/drive/MyDrive/yoloV5/train/exp3'
@@ -91,21 +92,22 @@ if __name__ == '__main__':
 
         # if would like to use depthmap as the class directly
         out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
+
         # 因为用了torch自带的nms所以变成了xyxy
 
 
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         plot_images_modified(img, targets, paths, fname='check.jpg', names=None)
-        plot_images_modified(img, output_to_target(out),paths ,fname = 'check_pred3.jpg',names=None)
-
-from utils.metrics import ConfusionMatrix
-out3 = nms_modified(out, obj_thre=0.8,iou_thres=0.5,nc=256)
-mat = ConfusionMatrix(nc=256,conf=0.5, iou_thres=0.6)
-# out_targetfmt = output_to_target(out3)
-for idx in range(len(out3)):
-    labels = targets[targets[:,0].int()==idx][:,1::] # class, x,y,w,h
-    detections = out3[idx] # x,y,x,y,conf,cls
-    detections[:,5] = detections[:,5].int()
-    labels[:,1::] = xywh2xyxy(labels[:,1::])# class, x,y,x,y
-    mat.process_batch(detections,labels)
-    break
+        plot_images_modified(img, output_to_target(out),paths ,fname = 'check_pred.jpg',names=None)
+#
+# from utils.metrics import ConfusionMatrix
+# out3 = nms_modified(out, obj_thre=0.8,iou_thres=0.5,nc=256)
+# mat = ConfusionMatrix(nc=256,conf=0.5, iou_thres=0.6)
+# # out_targetfmt = output_to_target(out3)
+# for idx in range(len(out3)):
+#     labels = targets[targets[:,0].int()==idx][:,1::] # class, x,y,w,h
+#     detections = out3[idx] # x,y,x,y,conf,cls
+#     detections[:,5] = detections[:,5].int()
+#     labels[:,1::] = xywh2xyxy(labels[:,1::])# class, x,y,x,y
+#     mat.process_batch(detections,labels)
+#     break

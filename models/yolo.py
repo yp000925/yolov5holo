@@ -56,13 +56,15 @@ class DetectLinearHead(nn.Module):
 
                 # y = x[i].sigmoid()
                 y = x[i]
+                # print(y.shape)
                 if self.inplace:
-                    y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    y[..., 0:2] = (y[..., 0:2].sigmoid() * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    y[..., 2:4] = (y[..., 2:4].sigmoid() * 2) ** 2 * self.anchor_grid[i]  # wh
+                    y[...,4] = y[...,4].sigmoid()
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
-                    xy = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i].view(1, self.na, 1, 1, 2)  # wh
-                    y = torch.cat((xy, wh, y[..., 4:]), -1)
+                    xy = (y[..., 0:2].sigmoid() * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    wh = (y[..., 2:4].sigmoid() * 2) ** 2 * self.anchor_grid[i].view(1, self.na, 1, 1, 2)  # wh
+                    y = torch.cat((xy, wh,y[...,4].sigmoid(), y[..., 5:]), -1) # xy,wh, objectiveness, pred_depth
                 z.append(y.view(bs, -1, self.no))
 
         return x if self.training else (torch.cat(z, 1), x)
