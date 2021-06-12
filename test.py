@@ -12,7 +12,7 @@ from tqdm import tqdm
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
+    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr,nms_modified
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
@@ -149,8 +149,7 @@ def test_depthmap(data,
         t = time_synchronized()
 
         out, train_out = model(img, augment=augment)  # inference and training outputs
-
-        out = pred_label_onehot(out) #one-hot-version
+        # out = pred_label_onehot(out) #one-hot-version
 
         t0 += time_synchronized() - t
 
@@ -162,7 +161,10 @@ def test_depthmap(data,
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t = time_synchronized()
-        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True)
+
+        out = nms_modified(out, obj_thre=0.8, iou_thres=0.5, nc=256)  # list of anchors with [xyxy, conf, cls]
+
+        # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True)
         # out = post_nms(out,0.45)
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         t1 += time_synchronized() - t
@@ -272,9 +274,19 @@ def test_depthmap(data,
     else:
         nt = torch.zeros(1)
 
+    mtx = confusion_matrix.matrix
+    thred = 10  # take prediction within this range as acceptable
+    correct_match = 0
+    total_num = np.sum(mtx[:, 0:data_nc])
+    for gt_cls in range(mtx.shape[1] - 1):
+        correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
+    accuracy = correct_match / total_num
+    res = 0.02 / 256
+
     # Print results
     pf = '%20s' + '%12i' * 2 + '%12.3g' * 4  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res * 1000, accuracy * 100))
 
     # Print results per class
     if (verbose or (data_nc < 50 and not training)) and data_nc > 1 and len(stats):

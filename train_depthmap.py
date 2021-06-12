@@ -58,6 +58,7 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
 
     # Configure
     plots = not opt.evolve  # create plots
+
     cuda = device.type != 'cpu'
     init_seeds(2 + rank)
     with open(opt.data) as f:
@@ -365,7 +366,7 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
                                                  dataloader=testloader,
                                                  save_dir=save_dir,
                                                  verbose=nc < 50 and final_epoch,
-                                                 plots=plots and final_epoch,
+                                                 plots=plots or final_epoch,
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco)
