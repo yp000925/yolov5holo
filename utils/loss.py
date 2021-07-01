@@ -283,7 +283,7 @@ class ComputeLoss_LinearOut:
                 # regression loss when we set the class is 1, just the depth loss
                 assert self.nc == 1
                 t = tcls[i]/255.0 # change to 0-1 range
-                lcls += self.MSEdepth(ps[:,5:].squeeze(), t) # 限制输出在0-1之间
+                lcls += self.MSEdepth(ps[:,5:].squeeze(), t)
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
