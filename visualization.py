@@ -19,7 +19,7 @@ from utils.plots import plot_images, output_to_target, plot_study_txt,plot_image
 from utils.torch_utils import select_device, time_synchronized
 
 import torchvision
-
+from utils.loss import ComputeLoss_Depthmap,ComputeLoss_LinearOut
 
 def post_nms(pred, iou_thre):
     output = [torch.zeros((0, 6), device=pred.device)] * pred.shape[0]
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     task = 'test'
     device = torch.device('cpu')
     set_logging()
-    batch_size = 32
+    batch_size = 2
 
     # Load model
     model = attempt_load(weights, map_location=device)  # load FP32 model
@@ -81,9 +81,11 @@ if __name__ == '__main__':
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         nb, _, height, width = img.shape  # batch size, channels, height, width
         targets = targets.to(device)
-        targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
-
-        out, train_out = model(img)  # inference and training outputs
+        # targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
+        compute_loss = ComputeLoss_LinearOut(model)
+        out, train_out = model(img)
+        a = compute_loss.build_targets(train_out,targets)
+        a = compute_loss(train_out,targets) # inference and training outputs
         # if would like to use one_hot for output
         # out = pred_label_onehot(out)
         # out = non_max_suppression(out)

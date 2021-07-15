@@ -664,7 +664,7 @@ def load_image(self, index):
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
-        r = self.img_size / max(h0, w0)  # ratio
+        r = np.array(self.img_size) / max(h0, w0)  # ratio
         if r != 1:  # if sizes are not equal
             img = cv2.resize(img, (int(w0 * r), int(h0 * r)),
                              interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)

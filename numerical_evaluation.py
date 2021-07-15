@@ -81,7 +81,7 @@ if __name__ == '__main__':
 
 
         # # if would like to use depthmap as the class directly
-        # out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
+        out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
         # 因为用了torch自带的nms所以变成了xyxy
 
 
@@ -101,15 +101,15 @@ if __name__ == '__main__':
 
 # Calculate accuracy      ----------------------------------------------------------------------------------------------
 
-        mtx = mat.matrix
-        thred = 10 # take prediction within this range as acceptable
-        correct_match = 0
-        total_num = np.sum(mtx[:,0:nc])
-        for gt_cls in range(mtx.shape[1]-1):
-            correct_match += np.sum(mtx[max(0,gt_cls-thred):min(gt_cls+thred,mtx.shape[0]-1), gt_cls])
-        accuracy = correct_match/total_num
-        res = 0.02/256
-        print("The total accuracy for boundary {:f}um is {:f}%".format(thred*res*1000,accuracy*100))
+    mtx = mat.matrix
+    thred = 10 # take prediction within this range as acceptable
+    correct_match = 0
+    total_num = np.sum(mtx[:,0:nc])
+    for gt_cls in range(mtx.shape[1]-1):
+        correct_match += np.sum(mtx[max(0,gt_cls-thred):min(gt_cls+thred,mtx.shape[0]-1), gt_cls])
+    accuracy = correct_match/total_num
+    res = 0.02/256
+    print("The total accuracy for boundary {:f}um is {:f}%".format(thred*res*1000,accuracy*100))
 
 
 

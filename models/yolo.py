@@ -29,7 +29,7 @@ class DetectLinearHead(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
 
-    def __init__(self, nc=80, anchors=(), ch=(), inplace=True):  # detection layer
+    def __init__(self, nc=1, anchors=(), ch=(), inplace=True):  # detection layer
         super(DetectLinearHead, self).__init__()
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
@@ -47,25 +47,29 @@ class DetectLinearHead(nn.Module):
         z = []  # inference output
         for i in range(self.nl):
             x[i] = self.m[i](x[i])  # conv
-            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+            assert x[i].shape[-1] == 6 #检查是否为 xy wh objectiveness depth
+            # x(bs,255,20,20) to x(bs,3,20,20,85) # image, anchor, gridy, gridx, ouput_channel
 
             if not self.training:  # inference
                 if self.grid[i].shape[2:4] != x[i].shape[2:4] or self.onnx_dynamic:
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
 
                 # y = x[i].sigmoid()
-                y = x[i]
+                y = x[i] # shape (bs,3,ny,nx,output_channel 6)
                 # print(y.shape)
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2].sigmoid() * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                     y[..., 2:4] = (y[..., 2:4].sigmoid() * 2) ** 2 * self.anchor_grid[i]  # wh
-                    y[...,4] = y[...,4].sigmoid()
+                    y[...,4] = y[...,4].sigmoid() # objectiveness
+
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy = (y[..., 0:2].sigmoid() * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                     wh = (y[..., 2:4].sigmoid() * 2) ** 2 * self.anchor_grid[i].view(1, self.na, 1, 1, 2)  # wh
-                    y = torch.cat((xy, wh,y[...,4].sigmoid(), y[..., 5:]), -1) # xy,wh, objectiveness, pred_depth
-                z.append(y.view(bs, -1, self.no))
+                    y = torch.cat((xy, wh,y[...,4].sigmoid(), y[..., 5]), -1) # xy,wh, objectiveness, pred_depth
+
+                z.append(y.view(bs, -1, self.no)) # shape (bs,3*ny*nx,output_channel 6)
 
         return x if self.training else (torch.cat(z, 1), x)
 
@@ -86,6 +90,7 @@ class Detect(nn.Module):
         self.na = len(anchors[0]) // 2  # number of anchors
         self.grid = [torch.zeros(1)] * self.nl  # init grid
         a = torch.tensor(anchors).float().view(self.nl, -1, 2)
+
         self.register_buffer('anchors', a)  # shape(nl,na,2)
         self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
@@ -134,13 +139,17 @@ class Model(nn.Module):
 
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
+
         if nc and nc != self.yaml['nc']:
             logger.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
         if anchors:
             logger.info(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
+
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
+
+
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         self.inplace = self.yaml.get('inplace', True)
         # logger.info([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
@@ -151,7 +160,7 @@ class Model(nn.Module):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            m.anchors /= m.stride.view(-1, 1, 1)
+            m.anchors /= m.stride.view(-1, 1, 1) # here anchor has been transferred to the feature map size
             check_anchor_order(m)
             self.stride = m.stride
             self._initialize_biases()  # only run once
@@ -293,9 +302,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 pass
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
+
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP,
                  C3, C3TR]:
-            c1, c2 = ch[f], args[0]
+            c1, c2 = ch[f], args[0] # c2:output channel c1: input channel (initial is 3)
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
