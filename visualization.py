@@ -13,7 +13,7 @@ from test import pred_label_onehot
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader,create_dataloader_modified
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr, nms_modified
+    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr, nms_modified,nms_depthmap
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt,plot_images_modified
 from utils.torch_utils import select_device, time_synchronized
@@ -93,7 +93,9 @@ if __name__ == '__main__':
 
 
         # if would like to use depthmap as the class directly
-        out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
+        # out = nms_modified(out,obj_thre=0.8, iou_thres=0.5, nc=256) # list of anchors with [xyxy, conf, cls]
+
+        out = nms_depthmap(out,obj_thre=0.8, iou_thres=0.5, nc=256)
 
         # 因为用了torch自带的nms所以变成了xyxy
 
