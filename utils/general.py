@@ -491,19 +491,20 @@ def wh_iou(wh1, wh2):
     return inter / (wh1.prod(2) + wh2.prod(2) - inter)  # iou = inter / (area1 + area2 - inter)
 
 def nms_depthmap(prediction,obj_thre = 0.5, iou_thres = 0.6, nc=256, max_det=300,merge_by_depth = True):
-    '''
-
+    """
+    Run non-maximum suppression (NMS) modified version on depthmap output
     Args:
-        prediction:
-        obj_thre:
-        iou_thres:
-        nc:
+        prediction: take the output directly from the network [bz,nc, 4+1+ncls]
+                    the last channel stands for [bbox, objectiveness, normalized_depth] respectively
+        obj_thre: obj_threshold
+        iou_thres: iou threshold for bbox nms
+        nc: number of depth we split as the class
         max_det:
-        classes:
+        merge_by_depth: if set as true, the sub candidates for each predicted bbox will be merged using the weighed mean
 
-    Returns:
+    Returns: list of all anchors in this batch with [xyxy, conf, cls]
 
-    '''
+    """
 
     xc = prediction[...,4] > obj_thre #candidates
 
@@ -560,7 +561,9 @@ def nms_depthmap(prediction,obj_thre = 0.5, iou_thres = 0.6, nc=256, max_det=300
             subbox_conf = iou * scores[None] # confidence for each corresponding sub bbox  [i, n]
             # subbox_conf = torch.where(subbox_conf > 0.8, subbox_conf, torch.zeros_like(subbox_conf))
             # subbox_depth = torch.where(subbox_conf > 0.8, subbox_depth,torch.zeros_like(subbox_depth)) # total weights
-            x[i, 5] = torch.multiply(subbox_depth, subbox_conf).sum(dim=1)/subbox_conf.sum(1)# update the prediction of depth by the weight
+            updated_depth = torch.multiply(subbox_depth, subbox_conf).sum(dim=1)/subbox_conf.sum(1)# update the prediction of depth by the weight
+            x[i, 5] = torch.round(updated_depth*nc)
+
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
             print(f'WARNING: NMS time limit {time_limit}s exceeded')

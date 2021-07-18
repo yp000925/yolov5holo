@@ -47,6 +47,7 @@ if __name__ == '__main__':
     # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
     # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
     weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_linearout/best.pt'
+
     view_image = True
     img_size = 512
     # project = '/content/drive/MyDrive/yoloV5/train/exp3'
