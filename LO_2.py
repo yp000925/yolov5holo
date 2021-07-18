@@ -359,7 +359,7 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
-                results, maps, times = test.test_depthmap(data_dict,
+                results = test.simple_test(data_dict,
                                                  batch_size=batch_size * 2,
                                                  imgsz=imgsz_test,
                                                  model=ema.ema,
@@ -371,6 +371,18 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco)
+                # results, maps, times = test.test_depthmap(data_dict,
+                #                                  batch_size=batch_size * 2,
+                #                                  imgsz=imgsz_test,
+                #                                  model=ema.ema,
+                #                                  single_cls=opt.single_cls,
+                #                                  dataloader=testloader,
+                #                                  save_dir=save_dir,
+                #                                  verbose=nc < 50 and final_epoch,
+                #                                  plots=plots and final_epoch,
+                #                                  wandb_logger=wandb_logger,
+                #                                  compute_loss=compute_loss,
+                #                                  is_coco=is_coco)
 
             # Write
             with open(results_file, 'a') as f:
@@ -458,9 +470,6 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
         dist.destroy_process_group()
     torch.cuda.empty_cache()
     return results
-
-
-
 
 
 

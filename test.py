@@ -341,6 +341,121 @@ def test_depthmap(data,
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 @torch.no_grad()
+def simple_test(data,
+         weights=None,
+         batch_size=32,
+         imgsz=640,
+         conf_thres=0.001,
+         iou_thres=0.6,  # for NMS
+         save_json=False,
+         single_cls=True,
+         augment=False,
+         verbose=False,
+         model=None,
+         dataloader=None,
+         save_dir=Path(''),  # for saving images
+         save_txt=False,  # for auto-labelling
+         save_hybrid=False,  # for hybrid auto-labelling
+         save_conf=False,  # save auto-label confidences
+         plots=True,
+         wandb_logger=None,
+         compute_loss=None,
+         half_precision=True,
+         is_coco=False,
+         opt=None):
+    # Initialize/load model and set device
+    training = model is not None
+    if training:  # called by train.py
+        device = next(model.parameters()).device  # get model device
+
+    else:  # called directly
+        set_logging()
+        device = select_device(opt.device, batch_size=batch_size)
+
+        # Directories
+        save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok)  # increment run
+        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+
+        # Load model
+        model = attempt_load(weights, map_location=device)  # load FP32 model
+        gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+        imgsz = check_img_size(imgsz, s=gs)  # check img_size
+
+        # Multi-GPU disabled, incompatible with .half() https://github.com/ultralytics/yolov5/issues/99
+        # if device.type != 'cpu' and torch.cuda.device_count() > 1:
+        #     model = nn.DataParallel(model)
+
+    # Half
+    half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
+    if half:
+        model.half()
+
+    # Configure
+    model.eval()
+
+    check_dataset(data)  # check
+    data_nc = int(data['nc'])  # number of classes
+    assert data_nc == 256
+
+    # Dataloader
+    if not training:
+        if device.type != 'cpu':
+            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+        task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
+                                       prefix=colorstr(f'{task}: '))[0]
+
+    seen = 0
+    confusion_matrix = ConfusionMatrix(nc=data_nc)
+    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    loss = torch.zeros(3, device=device)
+    for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+        img = img.to(device, non_blocking=True)
+        img = img.half() if half else img.float()  # uint8 to fp16/32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        targets = targets.to(device)
+        nb, _, height, width = img.shape  # batch size, channels, height, width
+
+        out, train_out = model(img, augment=augment)  # inference and training outputs
+        # out = pred_label_onehot(out) #one-hot-version
+
+        # Compute loss
+        loss += compute_loss([x.float() for x in train_out], targets)[1][:3]  # box, obj, cls
+
+        # Run NMS
+        # out = nms_modified(out, obj_thre=0.8, iou_thres=0.5, nc=256)  # list of anchors with [xyxy, conf, cls]
+        out = nms_depthmap(out, obj_thre=0.8, iou_thres=0.5, nc=256)
+
+        # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
+
+        # update confusion matrix ----------------------------------------------------------------------------------------------
+        for batch_idx in range(len(out)):
+            labels = targets[targets[:, 0].int() == batch_idx][:, 1::]  # class, x,y,w,h
+            detections = out[batch_idx]  # x,y,x,y,conf,cls
+            detections[:, 5] = detections[:, 5].int()
+            labels[:, 1::] = xywh2xyxy(labels[:, 1::])  # class, x,y,x,y
+            confusion_matrix.process_batch(detections, labels)
+
+        # Plot images
+        if plots and batch_i < 3:
+            f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
+            Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
+            f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
+            Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
+
+    mtx = confusion_matrix.matrix
+    thred = 10  # take prediction within this range as acceptable
+    correct_match = 0
+    total_num = np.sum(mtx[:, 0:data_nc])
+    for gt_cls in range(mtx.shape[1] - 1):
+        correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
+    accuracy = correct_match / total_num
+    res = 0.02 / 256
+    print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res * 1000, accuracy * 100))
+    return (0, 0, 0, 0, *(loss.cpu() / len(dataloader)).tolist())
+
+
+@torch.no_grad()
 def test(data,
          weights=None,
          batch_size=32,
