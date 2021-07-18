@@ -12,7 +12,7 @@ from tqdm import tqdm
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr,nms_modified
+    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr,nms_modified,nms_depthmap
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
@@ -133,7 +133,6 @@ def test_depthmap(data,
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=data_nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-    coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
@@ -162,16 +161,15 @@ def test_depthmap(data,
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t = time_synchronized()
 
-        out = nms_modified(out, obj_thre=0.8, iou_thres=0.5, nc=256)  # list of anchors with [xyxy, conf, cls]
+        # out = nms_modified(out, obj_thre=0.8, iou_thres=0.5, nc=256)  # list of anchors with [xyxy, conf, cls]
+        out = nms_depthmap(out, obj_thre=0.8, iou_thres=0.5, nc=256)
 
-        # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True)
-        # out = post_nms(out,0.45)
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
         t1 += time_synchronized() - t
 
         # Statistics per image
         for si, pred in enumerate(out):
-            labels = targets[targets[:, 0] == si, 1:]
+            labels = targets[targets[:, 0] == si, 1:] # class, x,y,w,h
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class
             path = Path(paths[si])
@@ -185,17 +183,17 @@ def test_depthmap(data,
             # Predictions
             # if single_cls:
             #     pred[:, 5] = 0
-            predn = pred.clone()
-            scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
+            predn = pred.clone() # anchors with [xyxy, conf, cls]
+            # scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
 
-            # Append to text file
-            if save_txt:
-                gn = torch.tensor(shapes[si][0])[[1, 0, 1, 0]]  # normalization gain whwh
-                for *xyxy, conf, cls in predn.tolist():
-                    xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                    line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
-                    with open(save_dir / 'labels' / (path.stem + '.txt'), 'a') as f:
-                        f.write(('%g ' * len(line)).rstrip() % line + '\n')
+            # # Append to text file
+            # if save_txt:
+            #     gn = torch.tensor(shapes[si][0])[[1, 0, 1, 0]]  # normalization gain whwh
+            #     for *xyxy, conf, cls in predn.tolist():
+            #         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+            #         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+            #         with open(save_dir / 'labels' / (path.stem + '.txt'), 'a') as f:
+            #             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
             # W&B logging - Media Panel Plots
             if len(wandb_images) < log_imgs and wandb_logger.current_epoch > 0:  # Check for test operation
@@ -217,7 +215,7 @@ def test_depthmap(data,
                 box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
                 for p, b in zip(pred.tolist(), box.tolist()):
                     jdict.append({'image_id': image_id,
-                                  'category_id': coco91class[int(p[5])] if is_coco else int(p[5]),
+                                  'category_id': int(p[5]),
                                   'bbox': [round(x, 3) for x in b],
                                   'score': round(p[4], 5)})
 
@@ -229,9 +227,9 @@ def test_depthmap(data,
 
                 # target boxes
                 tbox = xywh2xyxy(labels[:, 1:5])
-                scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
-                if plots:
-                    confusion_matrix.process_batch(predn, torch.cat((labels[:, 0:1], tbox), 1))
+                # scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
+
+                confusion_matrix.process_batch(predn, torch.cat((labels[:, 0:1], tbox), 1))
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
@@ -264,6 +262,16 @@ def test_depthmap(data,
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
+    mtx = confusion_matrix.matrix
+    thred = 10  # take prediction within this range as acceptable
+    correct_match = 0
+    total_num = np.sum(mtx[:, 0:data_nc])
+    for gt_cls in range(mtx.shape[1] - 1):
+        correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
+    accuracy = correct_match / total_num
+    res = 0.02 / 256
+    print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res * 1000, accuracy * 100))
+
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
@@ -274,19 +282,9 @@ def test_depthmap(data,
     else:
         nt = torch.zeros(1)
 
-    mtx = confusion_matrix.matrix
-    thred = 10  # take prediction within this range as acceptable
-    correct_match = 0
-    total_num = np.sum(mtx[:, 0:data_nc])
-    for gt_cls in range(mtx.shape[1] - 1):
-        correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
-    accuracy = correct_match / total_num
-    res = 0.02 / 256
-
     # Print results
     pf = '%20s' + '%12i' * 2 + '%12.3g' * 4  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
-    print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res * 1000, accuracy * 100))
 
     # Print results per class
     if (verbose or (data_nc < 50 and not training)) and data_nc > 1 and len(stats):
