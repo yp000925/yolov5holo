@@ -10,12 +10,13 @@ import yaml
 from tqdm import tqdm
 
 from models.experimental import attempt_load
-from utils.datasets import create_dataloader
+from utils.datasets import create_dataloader,create_dataloader_modified
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr,nms_modified,nms_depthmap
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
+from utils.loss import ComputeLoss_LinearOut
 
 import torchvision
 
@@ -345,8 +346,8 @@ def simple_test(data,
          weights=None,
          batch_size=32,
          imgsz=640,
-         conf_thres=0.001,
-         iou_thres=0.6,  # for NMS
+         conf_thres=0.8,
+         iou_thres=0.5,  # for NMS
          save_json=False,
          single_cls=True,
          augment=False,
@@ -409,12 +410,16 @@ def simple_test(data,
     confusion_matrix = ConfusionMatrix(nc=data_nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     loss = torch.zeros(3, device=device)
-    for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+
+    s = ('%10s'*3+'%20s'*4) % ('lbox','lobj','ldepth', 'Accuracy@0.39mm', 'Accuracy@0.78mm', 'Accuracy@1.5625mm','Accuracy@2.3438mm')
+    for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader,desc=s)):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
+
         nb, _, height, width = img.shape  # batch size, channels, height, width
+
 
         out, train_out = model(img, augment=augment)  # inference and training outputs
         # out = pred_label_onehot(out) #one-hot-version
@@ -424,11 +429,12 @@ def simple_test(data,
 
         # Run NMS
         # out = nms_modified(out, obj_thre=0.8, iou_thres=0.5, nc=256)  # list of anchors with [xyxy, conf, cls]
-        out = nms_depthmap(out, obj_thre=0.8, iou_thres=0.5, nc=256)
+        out = nms_depthmap(out, obj_thre=conf_thres, iou_thres=iou_thres, nc=data_nc)
 
         # list of detections, on (n,6) tensor per image [xyxy, conf, cls]
 
         # update confusion matrix ----------------------------------------------------------------------------------------------
+        targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device) # transfer to the pixel values
         for batch_idx in range(len(out)):
             labels = targets[targets[:, 0].int() == batch_idx][:, 1::]  # class, x,y,w,h
             detections = out[batch_idx]  # x,y,x,y,conf,cls
@@ -444,15 +450,19 @@ def simple_test(data,
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
     mtx = confusion_matrix.matrix
-    thred = 10  # take prediction within this range as acceptable
-    correct_match = 0
-    total_num = np.sum(mtx[:, 0:data_nc])
-    for gt_cls in range(mtx.shape[1] - 1):
-        correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
-    accuracy = correct_match / total_num
-    res = 0.02 / 256
-    print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res * 1000, accuracy * 100))
-    return (0, 0, 0, 0, *(loss.cpu() / len(dataloader)).tolist())
+    accuracies = []
+    for thred in [5, 10, 20, 30]:
+         # take prediction within this range as acceptable
+        correct_match = 0
+        total_num = np.sum(mtx[:, 0:data_nc])
+        for gt_cls in range(mtx.shape[1] - 1):
+            correct_match += np.sum(mtx[max(0, gt_cls - thred):min(gt_cls + thred, mtx.shape[0] - 1), gt_cls])
+        accuracy = correct_match / total_num
+        accuracies.append(accuracy)
+    pf = '{:10.5f}'*3 + '{:20.2%}'*4
+    print(pf.format(*np.array(loss.cpu())/(batch_i+1),*accuracies))
+    # print("The total accuracy for boundary {:f}mm is {:f}%".format(thred * res, accuracy * 100))
+    return np.array(loss.cpu()),accuracies
 
 
 @torch.no_grad()
@@ -745,44 +755,37 @@ if __name__ == '__main__':
     parser.add_argument('--project', default='runs/test', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    opt = parser.parse_args()
-    opt.save_json |= opt.data.endswith('coco.yaml')
-    opt.data = check_file(opt.data)  # check file
-    print(opt)
-    check_requirements(exclude=('tensorboard', 'pycocotools', 'thop'))
+    opt = parser.parse_args([])# check file
+    import os
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-    if opt.task in ('train', 'val', 'test'):  # run normally
-        test(opt.data,
-             opt.weights,
-             opt.batch_size,
-             opt.img_size,
-             opt.conf_thres,
-             opt.iou_thres,
-             opt.save_json,
-             opt.single_cls,
-             opt.augment,
-             opt.verbose,
-             save_txt=opt.save_txt | opt.save_hybrid,
-             save_hybrid=opt.save_hybrid,
-             save_conf=opt.save_conf,
-             opt=opt
-             )
+    source = '/Users/zhangyunping/PycharmProjects/Holo_synthetic/datayoloV5format/images/small_test'
+    # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
+    # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
+    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_linearout/best.pt'
 
-    elif opt.task == 'speed':  # speed benchmarks
-        for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, opt=opt)
+    view_image = True
+    img_size = 512
+    # project = '/content/drive/MyDrive/yoloV5/train/exp3'
+    task = 'test'
+    device = torch.device('cpu')
+    set_logging()
+    batch_size = 2
 
-    elif opt.task == 'study':  # run over a range of settings and save/plot
-        # python test.py --task study --data coco.yaml --iou 0.7 --weights yolov5s.pt yolov5m.pt yolov5l.pt yolov5x.pt
-        x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
-        for w in opt.weights:
-            f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
-            y = []  # y axis
-            for i in x:  # img-size
-                print(f'\nRunning {f} point {i}...')
-                r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False, opt=opt)
-                y.append(r + t)  # results and times
-            np.savetxt(f, y, fmt='%10.4g')  # save
-        os.system('zip -r study.zip study_*.txt')
-        plot_study_txt(x=x)  # plot
+    # Load model
+    model = attempt_load(weights, map_location=device)  # load FP32 model
+    gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+    imgsz = check_img_size(img_size, s=gs)  # check img_size
+
+    with open('test_data.yaml') as f:
+        data_dict = yaml.safe_load(f)
+    model.eval()
+    nc = 256  # number of classes
+
+    if device.type != 'cpu':
+        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+    task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+    dataloader = create_dataloader_modified(source, imgsz, batch_size, gs,
+                                            pad=0.5, rect=True,prefix=colorstr(f'{task}: '), image_weights=True)[0]
+    compute_loss = ComputeLoss_LinearOut(model)
+    simple_test(data=data_dict, batch_size=batch_size,imgsz=imgsz,model=model, dataloader=dataloader,compute_loss=compute_loss)
