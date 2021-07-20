@@ -248,7 +248,9 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
+
     scaler = amp.GradScaler(enabled=cuda)
+
     compute_loss = ComputeLoss_LinearOut(model)  # init loss class
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
@@ -386,7 +388,10 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
 
             # Write
             with open(results_file, 'a') as f:
-                f.write(s + '\n'+ ('{:10.5f}'*3 + '{:20.2%}'*4).format(*loss,*accuracies) + '\n')  # append lbox, lobj, ldepth,
+                msg = ('%10s' * 3 + '%20s' * 4) % (
+                'lbox', 'lobj', 'ldepth', 'Accuracy@0.39mm', 'Accuracy@0.78mm', 'Accuracy@1.5625mm',
+                'Accuracy@2.3438mm')
+                f.write(msg + '\n'+ ('{:10.5f}'*3 + '{:20.2%}'*4).format(*loss,*accuracies) + '\n')  # append lbox, lobj, ldepth,
                 # accuracies at 4 range
 
             # Log

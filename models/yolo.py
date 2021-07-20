@@ -49,7 +49,6 @@ class DetectLinearHead(nn.Module):
             x[i] = self.m[i](x[i])  # conv
             bs, _, ny, nx = x[i].shape
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-            assert x[i].shape[-1] == 6 #检查是否为 xy wh objectiveness depth
             # x(bs,255,20,20) to x(bs,3,20,20,85) # image, anchor, gridy, gridx, ouput_channel
 
             if not self.training:  # inference
