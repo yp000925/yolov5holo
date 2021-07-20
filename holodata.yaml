@@ -256,6 +256,6 @@ names:
 - '255'
 - '256'
 nc: 256
-train: ../medium_dataset/images/train
-val: ../medium_dataset/images/validation
+train: ../full_data/images/train
+val: ../full_data/images/validation
 
