@@ -391,7 +391,7 @@ def train(hyp, opt, device, tb_writer=None, depth_mode = False):
                 msg = ('%10s' * 3 + '%20s' * 4) % (
                 'lbox', 'lobj', 'ldepth', 'Accuracy@0.39mm', 'Accuracy@0.78mm', 'Accuracy@1.5625mm',
                 'Accuracy@2.3438mm')
-                f.write(s + '\n'+ ('{:10.5f}'*3 + '{:20.2%}'*4).format(*loss,*accuracies) + '\n')
+                f.write(s + ('{:10.5f}'*3 + '{:10.5f}'*4).format(*loss,*accuracies) + '\n')
                 #  (epoch, epochs - 1), mem, *mloss('box', 'obj', 'cls', 'total'), targets.shape[0], imgs.shape[-1], lbox, lobj, ldepth,
                 # accuracies at 4 range
 

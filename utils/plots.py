@@ -493,23 +493,24 @@ def plot_results(start=0, stop=0, bucket='', id=(), labels=(), save_dir=''):
     assert len(files), 'No results.txt files found in %s, nothing to plot.' % os.path.abspath(save_dir)
     for fi, f in enumerate(files):
         try:
-            results = np.loadtxt(f, usecols=[2, 3, 4, 8, 9, 10, 11,12, 13, 14, 15, 16, 17], ndmin=2).T
+            results = np.loadtxt(f, usecols=[2, 3, 4, 8, 9, 10, 11, 12, 13, 14]).T
+            fig, ax = plt.subplots(2, 5, figsize=(12, 6), tight_layout=True)
+            s = ['train/box', 'train/obj', 'train/cls', 'val/lbox', 'val/lobj', 'val/ldepth', 'Accuracy@0.39mm',
+                 'Accuracy@0.78mm', 'Accuracy@1.5625mm',
+                 'Accuracy@2.3438mm']
             n = results.shape[1]  # number of rows
             x = range(start, min(stop, n) if stop else n)
             for i in range(10):
                 y = results[i, x]
-                if i in [0,1,2,3,4,5]:
+                if i in [0, 1, 2, 3, 4, 5]:
                     y[y == 0] = np.nan  # don't show zero loss values
                     # y /= y[0]  # normalize
-                label = labels[fi] if len(labels) else f.stem
-                ax[i].plot(x, y, marker='.', label=label, linewidth=2, markersize=8)
-                ax[i].set_title(s[i])
-                # if i in [5, 6, 7]:  # share train and val loss y axes
-                #     ax[i].get_shared_y_axes().join(ax[i], ax[i - 5])
+
+                ax[i // 5, i % 5].plot(x, y, marker='.', linewidth=2, markersize=8)
+                ax[i // 5, i % 5].set_title(s[i])
         except Exception as e:
             print('Warning: Plotting error for %s; %s' % (f, e))
 
-    ax[1].legend()
     fig.savefig(Path(save_dir) / 'results.png', dpi=200)
 
 # def plot_results(start=0, stop=0, bucket='', id=(), labels=(), save_dir=''):
