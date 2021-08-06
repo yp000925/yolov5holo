@@ -438,7 +438,8 @@ def simple_test(data,
         for batch_idx in range(len(out)):
             labels = targets[targets[:, 0].int() == batch_idx][:, 1::]  # class, x,y,w,h
             detections = out[batch_idx]  # x,y,x,y,conf,cls
-            detections[:, 5] = detections[:, 5].int()
+            # detections[:, 5] = detections[:, 5].int()
+            detections[:, 5] = torch.clamp(detections[:, 5].int(), 0, 256)
             labels[:, 1::] = xywh2xyxy(labels[:, 1::])  # class, x,y,x,y
             confusion_matrix.process_batch(detections, labels)
 

@@ -46,7 +46,7 @@ if __name__ == '__main__':
     source = '/Users/zhangyunping/PycharmProjects/Holo_synthetic/datayoloV5format/images/small_test'
     # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp3/best.pt'
     # weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_depthmap/best.pt'
-    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_linearout/best.pt'
+    weights = '/Users/zhangyunping/PycharmProjects/yolov5holo/train/exp_bboxrescaled_weightedloss/best.pt'
 
     view_image = True
     img_size = 512
