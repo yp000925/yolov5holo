@@ -6,6 +6,7 @@ from utils.autoanchor import *
 data_source = '/Users/zhangyunping/PycharmProjects/Holo_synthetic/datayoloV5format/images/small_test'
 img_size = 512
 
+
 batch_size = 128
 anchors = kmean_anchors(path='test_data.yaml', n=9, img_size=512, thr=4.0, gen=1000, verbose=True)
 
